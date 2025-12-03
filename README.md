@@ -1,4 +1,4 @@
-# gadget
+# Gadget
 
 A Complete Inventory Management Application using 
 flutter 
