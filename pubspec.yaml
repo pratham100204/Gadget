@@ -45,7 +45,6 @@ dependencies:
   shared_preferences: ^2.2.0
   image_picker: ^0.8.7+5
   image: ^4.0.17
-  # image_cropper required a newer version to avoid http package conflict
   image_cropper: ^11.0.0
   mobile_scanner: ^7.1.3
   lottie: ^3.3.2
