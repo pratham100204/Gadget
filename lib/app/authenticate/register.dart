@@ -18,6 +18,8 @@ class _RegisterState extends State<Register> {
 
   TextEditingController userEmailController = TextEditingController();
   TextEditingController userPasswordController = TextEditingController();
+  String selectedRole = 'Staff'; // Default role
+  final List<String> roles = ['SuperAdmin', 'Manager', 'Staff'];
 
   // Design Colors
   final Color _backgroundColor = const Color(0xFF000000);
@@ -103,6 +105,37 @@ class _RegisterState extends State<Register> {
                     setState(() => this.userPasswordController.text = val);
                   },
                 ),
+                SizedBox(height: 20.0),
+
+                // 3.5 Role Selection Dropdown
+                Container(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: _inputColor,
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedRole,
+                      dropdownColor: _inputColor,
+                      icon: Icon(Icons.arrow_drop_down, color: _subTextColor),
+                      style: TextStyle(color: Colors.white, fontSize: 16),
+                      isExpanded: true,
+                      items:
+                          roles.map((String role) {
+                            return DropdownMenuItem<String>(
+                              value: role,
+                              child: Text(role),
+                            );
+                          }).toList(),
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          selectedRole = newValue!;
+                        });
+                      },
+                    ),
+                  ),
+                ),
                 SizedBox(height: 40.0),
 
                 // 4. Register Button
@@ -130,7 +163,11 @@ class _RegisterState extends State<Register> {
                         String email = this.userEmailController.text;
                         String password = this.userPasswordController.text;
 
-                        dynamic result = await _auth.register(email, password);
+                        dynamic result = await _auth.register(
+                          email,
+                          password,
+                          selectedRole,
+                        );
 
                         if (result == null) {
                           setState(() {

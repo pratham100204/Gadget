@@ -491,7 +491,8 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
           imagePath = croppedFile.path;
         }
       } catch (e) {
-        // Fallback if cropper fails
+        // Fallback if cropper fails - use original image
+        debugPrint('Image cropper failed, using original image: $e');
       }
 
       try {
@@ -507,10 +508,22 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
           setState(() => _imageBytes = bytes);
         }
       } catch (e) {
+        debugPrint('Image processing failed: $e');
         try {
           Uint8List bytes = await file.readAsBytes();
           setState(() => _imageBytes = bytes);
-        } catch (e) {}
+        } catch (e) {
+          debugPrint('Failed to read image bytes: $e');
+          // Show error to user
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Failed to load image. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
       }
     }
   }

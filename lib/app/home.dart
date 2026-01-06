@@ -6,11 +6,11 @@ import 'package:gadget/models/item.dart';
 import 'package:gadget/models/transaction.dart';
 import 'package:gadget/models/user.dart';
 import 'package:gadget/services/crud.dart';
+import 'package:gadget/utils/barcode_scanner.dart';
 import 'package:gadget/utils/bottom_nav.dart';
-import 'package:gadget/utils/window.dart';
 import 'package:intl/intl.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // [NEW] Helper class to hold detailed graph data
 class DayStats {
@@ -65,9 +65,27 @@ class _HomePageState extends State<HomePage> {
       crudHelper = CrudHelper(userData: userData);
 
       if (isNewUser) {
+        _loadLastViewedCount();
         _loadStockData();
       }
     }
+  }
+
+  // Load the last viewed notification count from SharedPreferences
+  Future<void> _loadLastViewedCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'last_viewed_notification_count_${userData!.uid}';
+    setState(() {
+      _lastViewedTransactionCount = prefs.getInt(key) ?? 0;
+      _isFirstLoad = false;
+    });
+  }
+
+  // Save the last viewed notification count to SharedPreferences
+  Future<void> _saveLastViewedCount(int count) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'last_viewed_notification_count_${userData!.uid}';
+    await prefs.setInt(key, count);
   }
 
   void _loadStockData() async {
@@ -135,14 +153,17 @@ class _HomePageState extends State<HomePage> {
 
         for (var t in transactions) {
           if (t.date != null && t.date!.contains(dateStr)) {
-            // Fix: Explicitly cast num to int using .toInt()
-            int quantity = (t.items ?? 0).toInt();
-            dailyTotalChange += quantity.abs(); // For height calculation
-
-            if (quantity > 0) {
+            int quantity = (t.items ?? 0).toInt().abs();
+            
+            // type: 1 = Stock Entry (added), type: 0 = Sales Entry (sold)
+            if (t.type == 1) {
+              // Stock Entry - items added
               dailyAdded += quantity;
-            } else {
-              dailySold += quantity.abs();
+              dailyTotalChange += quantity;
+            } else if (t.type == 0) {
+              // Sales Entry - items sold
+              dailySold += quantity;
+              dailyTotalChange += quantity;
             }
           }
         }
@@ -481,29 +502,33 @@ class _HomePageState extends State<HomePage> {
       builder: (context, snapshot) {
         bool hasNewAlerts = false;
         int currentCount = 0;
+        int unreadCount = 0;
 
         if (snapshot.hasData) {
           currentCount = snapshot.data!.length;
 
-          // Initialize sync on first load so the dot doesn't show immediately if not needed
-          // Or remove this block if you WANT the dot to show on fresh app start
+          // Initialize sync on first load so the badge doesn't show immediately
           if (_isFirstLoad) {
             _lastViewedTransactionCount = currentCount;
             _isFirstLoad = false;
           }
 
-          // Logic: If database has more items than we last viewed, show dot
+          // Calculate unread notifications count
           if (currentCount > _lastViewedTransactionCount) {
             hasNewAlerts = true;
+            unreadCount = currentCount - _lastViewedTransactionCount;
           }
         }
 
         return GestureDetector(
           onTap: () {
-            // [UPDATED] On Tap, sync the count so the dot disappears
+            // Mark all notifications as read when user opens the page
             setState(() {
               _lastViewedTransactionCount = currentCount;
             });
+            
+            // Persist the count to SharedPreferences
+            _saveLastViewedCount(currentCount);
 
             Navigator.push(
               context,
@@ -511,6 +536,7 @@ class _HomePageState extends State<HomePage> {
             );
           },
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
               Container(
                 padding: EdgeInsets.all(10),
@@ -528,15 +554,36 @@ class _HomePageState extends State<HomePage> {
               ),
               if (hasNewAlerts)
                 Positioned(
-                  right: 0,
-                  top: 0,
+                  right: -4,
+                  top: -4,
                   child: Container(
-                    width: 10,
-                    height: 10,
+                    padding: EdgeInsets.all(unreadCount > 9 ? 4 : 6),
                     decoration: BoxDecoration(
                       color: _accentColor,
                       shape: BoxShape.circle,
                       border: Border.all(color: _backgroundColor, width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _accentColor.withOpacity(0.5),
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    constraints: BoxConstraints(
+                      minWidth: 20,
+                      minHeight: 20,
+                    ),
+                    child: Center(
+                      child: Text(
+                        unreadCount > 99 ? '99+' : '$unreadCount',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: unreadCount > 9 ? 9 : 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                   ),
                 ),
@@ -603,53 +650,14 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openScanner() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (context) => Scaffold(
-              appBar: AppBar(
-                title: Text("Scan Barcode"),
-                backgroundColor: _backgroundColor,
-              ),
-              body: MobileScanner(
-                controller: MobileScannerController(
-                  detectionSpeed: DetectionSpeed.noDuplicates,
-                  returnImage: false,
-                ),
-                onDetect: (capture) {
-                  final List<Barcode> barcodes = capture.barcodes;
-                  for (final barcode in barcodes) {
-                    if (barcode.rawValue != null) {
-                      Navigator.pop(context);
-                      _handleScannedCode(barcode.rawValue!);
-                      break;
-                    }
-                  }
-                },
-              ),
-            ),
-      ),
+    BarcodeScanner.openScanner(
+      context: context,
+      allItems: allItems,
+      onItemFound: (item) {
+        _showProductDetailsPopup(item);
+      },
+      onLoadData: _loadStockData,
     );
-  }
-
-  void _handleScannedCode(String code) {
-    try {
-      final Item scannedItem = allItems.firstWhere(
-        (item) => (item.nickName == code || item.name == code),
-        orElse: () => Item(''),
-      );
-      if (scannedItem.name != null && scannedItem.name!.isNotEmpty) {
-        _showProductDetailsPopup(scannedItem);
-      } else {
-        WindowUtils.showAlertDialog(
-          context,
-          "Not Found",
-          "Item with code $code not found.",
-        );
-      }
-    } catch (e) {
-      WindowUtils.showAlertDialog(context, "Error", "Scanning failed.");
-    }
   }
 
   void _showProductDetailsPopup(Item item) {

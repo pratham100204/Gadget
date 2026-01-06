@@ -258,12 +258,21 @@ class CrudHelper {
 
   Future<int> updateUserData(UserData userData) async {
     print("got userData and roles ${userData.toMap()}");
+    
+    // Ensure we're using the correct UID
+    if (userData.uid == null || userData.uid!.isEmpty) {
+      print("ERROR: Cannot update user data - UID is null or empty");
+      return 0;
+    }
+    
+    print("Updating Firestore document: users/${userData.uid}");
+    
     await FirebaseFirestore.instance
         .collection('users')
         .doc(userData.uid)
-        .set(userData.toMap() as Map<String, dynamic>)
+        .set(userData.toMap() as Map<String, dynamic>, SetOptions(merge: true))
         .catchError((e) {
-      print(e);
+      print("ERROR updating user data: $e");
       return 0;
     });
     return 1;

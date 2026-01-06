@@ -6,11 +6,10 @@ import 'package:gadget/app/wrapper.dart';
 import 'package:gadget/models/item.dart';
 import 'package:gadget/models/user.dart';
 import 'package:gadget/services/crud.dart';
+import 'package:gadget/utils/barcode_scanner.dart';
 import 'package:gadget/utils/bottom_nav.dart';
 import 'package:gadget/utils/form.dart';
 import 'package:gadget/utils/loading.dart';
-import 'package:gadget/utils/window.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:provider/provider.dart';
 
 class ItemList extends StatefulWidget {
@@ -49,6 +48,9 @@ class ItemListState extends State<ItemList> {
 
   @override
   Widget build(BuildContext context) {
+    // Get userData from Provider in build method for real-time updates
+    final userData = Provider.of<UserData?>(context);
+    
     if (userData == null) {
       return Wrapper();
     }
@@ -70,9 +72,11 @@ class ItemListState extends State<ItemList> {
               radius: 16,
               backgroundColor: Colors.grey[800],
               child: Text(
-                userData!.email != null
-                    ? userData!.email![0].toUpperCase()
-                    : 'U',
+                userData.name != null && userData.name!.isNotEmpty
+                    ? userData.name![0].toUpperCase()
+                    : (userData.email != null
+                        ? userData.email![0].toUpperCase()
+                        : 'U'),
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -308,58 +312,16 @@ class ItemListState extends State<ItemList> {
     );
   }
 
-  // --- Logic Methods ---
-
-  // Copy of Scanner Logic from Home Page
+  // Scanner using common utility
   void _openScanner() {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder:
-            (context) => Scaffold(
-              appBar: AppBar(
-                title: Text("Scan Barcode"),
-                backgroundColor: _backgroundColor,
-              ),
-              body: MobileScanner(
-                controller: MobileScannerController(
-                  detectionSpeed: DetectionSpeed.noDuplicates,
-                  returnImage: false,
-                ),
-                onDetect: (capture) {
-                  final List<Barcode> barcodes = capture.barcodes;
-                  for (final barcode in barcodes) {
-                    if (barcode.rawValue != null) {
-                      Navigator.pop(context);
-                      _handleScannedCode(barcode.rawValue!);
-                      break;
-                    }
-                  }
-                },
-              ),
-            ),
-      ),
+    BarcodeScanner.openScanner(
+      context: context,
+      allItems: _itemsList,
+      onItemFound: (item) {
+        _showItemInfoDialog(item);
+      },
+      onLoadData: _updateListView,
     );
-  }
-
-  void _handleScannedCode(String code) {
-    try {
-      final Item scannedItem = _itemsList.firstWhere(
-        (item) => (item.nickName == code || item.name == code),
-        orElse: () => Item(''),
-      );
-
-      if (scannedItem.name != null && scannedItem.name!.isNotEmpty) {
-        _showItemInfoDialog(scannedItem);
-      } else {
-        WindowUtils.showAlertDialog(
-          context,
-          "Not Found",
-          "Item not found in inventory.",
-        );
-      }
-    } catch (e) {
-      WindowUtils.showAlertDialog(context, "Error", "Could not process code.");
-    }
   }
 
   void _showItemInfoDialog(Item item) async {

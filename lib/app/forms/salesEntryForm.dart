@@ -3,6 +3,7 @@ import 'package:gadget/models/item.dart';
 import 'package:gadget/models/transaction.dart';
 import 'package:gadget/models/user.dart';
 import 'package:gadget/services/crud.dart';
+import 'package:gadget/services/notification_service.dart';
 import 'package:gadget/utils/cache.dart';
 import 'package:gadget/utils/form.dart';
 import 'package:gadget/utils/loading.dart';
@@ -29,6 +30,36 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
   ItemTransaction? transaction;
   _SalesEntryFormState(this.title, this.transaction);
 
+  // Role Helpers
+  bool get _isSuperAdmin => userData?.roles?['superadmin'] == true;
+  bool get _isManager => userData?.roles?['manager'] == true;
+
+  bool _canEdit() {
+    // New Transaction: Everyone can create
+    if (transaction?.id == null) return true; 
+
+    // Existing Transaction:
+    if (_isSuperAdmin) return true;
+    
+    bool isOwner = userData?.targetEmail == userData?.email;
+
+    // Manager or Owner can edit ONLY if NOT signed
+    if ((isOwner || _isManager) && transaction?.signature == null) return true;
+
+    // Staff cannot edit existing
+    return false;
+  }
+
+  bool _canDelete() {
+    if (_isSuperAdmin) return true;
+    
+    bool isOwner = userData?.targetEmail == userData?.email;
+    // Only Owner can delete (if not signed). Manager/Staff cannot delete.
+    if (isOwner && transaction?.signature == null) return true;
+    
+    return false;
+  }
+
   var _formKey = GlobalKey<FormState>();
   final double _minimumPadding = 5.0;
   List<String> _forms = ['Sales Entry', 'Stock Entry', 'Item Entry'];
@@ -42,6 +73,7 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
   String stringUnderName = '';
   String? tempItemId;
   bool enableAdvancedFields = false;
+  bool _isSaving = false;
 
   List<String> units = [];
   String selectedUnit = '';
@@ -395,8 +427,12 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
                     controller: this.itemNumberController,
                     keyboardType: TextInputType.number,
                     onChanged: this.updateTransactionItems,
-                    validator:
-                        (val) => val!.isEmpty ? 'Please fill this field' : null,
+                    validator: (val) {
+                      if (val!.isEmpty) return 'Please fill this field';
+                      if ((double.tryParse(val) ?? 0) <= 0)
+                        return 'Quantity must be positive';
+                      return null;
+                    },
                   ),
 
                   SizedBox(height: 12),
@@ -408,8 +444,12 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
                     controller: this.sellingPriceController,
                     keyboardType: TextInputType.number,
                     onChanged: this.updateTransactionAmount,
-                    validator:
-                        (val) => val!.isEmpty ? 'Please fill this field' : null,
+                    validator: (val) {
+                      if (val!.isEmpty) return 'Please fill this field';
+                      if ((double.tryParse(val) ?? 0) < 0)
+                        return 'Amount cannot be negative';
+                      return null;
+                    },
                   ),
 
                   // Amount Info Calculation
@@ -484,29 +524,44 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
                     padding: EdgeInsets.symmetric(vertical: 30),
                     child: Row(
                       children: <Widget>[
-                        Expanded(
-                          child: SizedBox(
-                            height: 50,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _accentColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
+                        if (_canEdit())
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _accentColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
                                 ),
+                                child:
+                                    this._isSaving
+                                        ? SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        )
+                                        : Text(
+                                          "Save",
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                onPressed:
+                                    this._isSaving ? null : this.checkAndSave,
                               ),
-                              child: Text(
-                                "Save",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              onPressed: this.checkAndSave,
                             ),
                           ),
-                        ),
-                        if (this.transaction!.id != null) ...[
+                        if (this.transaction!.id != null && _canDelete()) ...[
                           SizedBox(width: 16),
                           Expanded(
                             child: SizedBox(
@@ -681,8 +736,24 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
   }
 
   // Save data to database
+  // Save data to database
   void _save() async {
+    if (this.transaction?.signature != null) {
+      WindowUtils.showAlertDialog(
+        this.context,
+        "Failed!",
+        "Cannot edit approved transaction",
+      );
+      return;
+    }
+    setState(() {
+      _isSaving = true;
+    });
+
     void _alertFail(message) {
+      setState(() {
+        _isSaving = false;
+      });
       WindowUtils.showAlertDialog(context, "Failed!", message);
     }
 
@@ -761,6 +832,14 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
   }
 
   void _delete() async {
+    if (this.transaction?.signature != null) {
+      WindowUtils.showAlertDialog(
+        this.context,
+        "Failed!",
+        "Cannot delete approved transaction",
+      );
+      return;
+    }
     if (this.transaction!.id == null) {
       this.clearFieldsAndTransaction();
       WindowUtils.showAlertDialog(context, "Status", 'Item not created');
@@ -783,8 +862,30 @@ class _SalesEntryFormState extends State<SalesEntryForm> {
     }
   }
 
-  void saveCallback(String message) {
+  void saveCallback(String message) async {
+    setState(() {
+      _isSaving = false;
+    });
+
     if (message.isEmpty) {
+      // Send push notification for successful sale
+      try {
+        int itemCount =
+            (double.tryParse(this.itemNumberController.text) ?? 0).toInt();
+        String itemName = this.itemNameController.text;
+        double amount = double.tryParse(this.sellingPriceController.text) ?? 0;
+
+        if (itemCount > 0 && itemName.isNotEmpty) {
+          await NotificationService.showSaleNotification(
+            itemCount: itemCount,
+            itemName: itemName,
+            amount: amount,
+          );
+        }
+      } catch (e) {
+        print('Error sending notification: $e');
+      }
+
       this.clearFieldsAndTransaction();
       if (this.widget.forEdit ?? false) {
         WindowUtils.moveToLastScreen(this.context, modified: true);

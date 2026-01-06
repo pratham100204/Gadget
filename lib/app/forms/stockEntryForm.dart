@@ -3,6 +3,7 @@ import 'package:gadget/models/item.dart';
 import 'package:gadget/models/transaction.dart';
 import 'package:gadget/models/user.dart';
 import 'package:gadget/services/crud.dart';
+import 'package:gadget/services/notification_service.dart';
 import 'package:gadget/utils/cache.dart';
 import 'package:gadget/utils/form.dart';
 import 'package:gadget/utils/window.dart';
@@ -27,6 +28,38 @@ class _StockEntryFormState extends State<StockEntryForm> {
   ItemTransaction? transaction;
   _StockEntryFormState(this.title, this.transaction);
 
+  // Role Helpers
+  bool get _isSuperAdmin => userData?.roles?['superadmin'] == true;
+  bool get _isManager => userData?.roles?['manager'] == true;
+  
+  bool _canEdit() {
+    // New Transaction: Everyone can create
+    if (transaction?.id == null) return true; 
+
+    // Existing Transaction:
+    if (_isSuperAdmin) return true;
+    
+    // Check ownership (simple check: if we are the owner of the target DB)
+    // Note: This matches the rule logic where 'isOwner' means collection matches email
+    bool isOwner = userData?.targetEmail == userData?.email;
+
+    // Manager or Owner can edit ONLY if NOT signed
+    if ((isOwner || _isManager) && transaction?.signature == null) return true;
+
+    // Staff cannot edit existing
+    return false;
+  }
+
+  bool _canDelete() {
+    if (_isSuperAdmin) return true;
+    
+    bool isOwner = userData?.targetEmail == userData?.email;
+    // Only Owner can delete (if not signed). Manager/Staff cannot delete.
+    if (isOwner && transaction?.signature == null) return true;
+    
+    return false;
+  }
+
   // Variables
   var _formKey = GlobalKey<FormState>();
   final double _minimumPadding = 5.0;
@@ -41,6 +74,7 @@ class _StockEntryFormState extends State<StockEntryForm> {
   String? tempItemId;
   List<Map<String, String>> itemNamesAndNicknames = [];
   bool enableAdvancedFields = false;
+  bool _isSaving = false;
 
   List<String> units = [];
   String selectedUnit = '';
@@ -393,8 +427,12 @@ class _StockEntryFormState extends State<StockEntryForm> {
                     controller: this.itemNumberController,
                     keyboardType: TextInputType.number,
                     onChanged: this.updateTransactionItems,
-                    validator:
-                        (val) => val!.isEmpty ? 'Please fill this field' : null,
+                    validator: (val) {
+                      if (val!.isEmpty) return 'Please fill this field';
+                      if ((double.tryParse(val) ?? 0) <= 0)
+                        return 'Quantity must be positive';
+                      return null;
+                    },
                   ),
 
                   SizedBox(height: 12),
@@ -406,8 +444,12 @@ class _StockEntryFormState extends State<StockEntryForm> {
                     controller: this.costPriceController,
                     keyboardType: TextInputType.number,
                     onChanged: this.updateTransactionAmount,
-                    validator:
-                        (val) => val!.isEmpty ? 'Please fill this field' : null,
+                    validator: (val) {
+                      if (val!.isEmpty) return 'Please fill this field';
+                      if ((double.tryParse(val) ?? 0) < 0)
+                        return 'Amount cannot be negative';
+                      return null;
+                    },
                   ),
 
                   // Amount Info
@@ -494,29 +536,44 @@ class _StockEntryFormState extends State<StockEntryForm> {
                     padding: EdgeInsets.symmetric(vertical: 30),
                     child: Row(
                       children: <Widget>[
-                        Expanded(
-                          child: SizedBox(
-                            height: 50,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _accentColor,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(30),
+                        if (_canEdit())
+                          Expanded(
+                            child: SizedBox(
+                              height: 50,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _accentColor,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
                                 ),
+                                child:
+                                    this._isSaving
+                                        ? SizedBox(
+                                          height: 20,
+                                          width: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        )
+                                        : Text(
+                                          "Save",
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                onPressed:
+                                    this._isSaving ? null : this.checkAndSave,
                               ),
-                              child: Text(
-                                "Save",
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              onPressed: this.checkAndSave,
                             ),
                           ),
-                        ),
-                        if (this.transaction!.id != null) ...[
+                        if (this.transaction!.id != null && _canDelete()) ...[
                           SizedBox(width: 16),
                           Expanded(
                             child: SizedBox(
@@ -693,6 +750,19 @@ class _StockEntryFormState extends State<StockEntryForm> {
 
   // Save data to database
   void _save() async {
+    if (this.transaction?.signature != null) {
+      WindowUtils.showAlertDialog(
+        this.context,
+        "Failed!",
+        "Cannot edit approved transaction",
+      );
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
     Item? item;
 
     if (this.widget.swipeData != null) {
@@ -719,8 +789,10 @@ class _StockEntryFormState extends State<StockEntryForm> {
       }
     }
     double items =
-        double.parse(this.itemNumberController.text).abs() * unitMultiple;
-    double totalCostPrice = double.parse(this.costPriceController.text).abs();
+        (double.tryParse(this.itemNumberController.text) ?? 0).abs() *
+        unitMultiple;
+    double totalCostPrice =
+        (double.tryParse(this.costPriceController.text) ?? 0).abs();
 
     if (this.transaction!.id != null &&
         this.transaction!.itemId == itemId &&
@@ -769,6 +841,15 @@ class _StockEntryFormState extends State<StockEntryForm> {
 
   // Delete item data
   void _delete() async {
+    if (this.transaction?.signature != null) {
+      WindowUtils.showAlertDialog(
+        this.context,
+        "Failed!",
+        "Cannot delete approved transaction",
+      );
+      return;
+    }
+
     if (this.transaction!.id == null) {
       this.clearFieldsAndTransaction();
       WindowUtils.showAlertDialog(context, "Status", 'Item not created');
@@ -792,8 +873,28 @@ class _StockEntryFormState extends State<StockEntryForm> {
     }
   }
 
-  void saveCallback(String message) {
+  void saveCallback(String message) async {
+    setState(() {
+      _isSaving = false;
+    });
+
     if (message.isEmpty) {
+      // Send push notification for successful stock entry
+      try {
+        int itemCount =
+            (double.tryParse(this.itemNumberController.text) ?? 0).toInt();
+        String itemName = this.itemNameController.text;
+
+        if (itemCount > 0 && itemName.isNotEmpty) {
+          await NotificationService.showStockNotification(
+            itemCount: itemCount,
+            itemName: itemName,
+          );
+        }
+      } catch (e) {
+        print('Error sending notification: $e');
+      }
+
       this.clearFieldsAndTransaction();
       if (this.widget.forEdit ?? false) {
         WindowUtils.moveToLastScreen(this.context, modified: true);
