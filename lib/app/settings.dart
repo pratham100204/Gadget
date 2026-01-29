@@ -20,6 +20,7 @@ class SettingState extends State<Setting> {
   UserData? userData;
   static AuthService _auth = AuthService();
   bool checkStock = true;
+  bool _isLoggingOut = false; // Loading state for logout
 
   final TextEditingController _nameController = TextEditingController();
 
@@ -91,6 +92,7 @@ class SettingState extends State<Setting> {
                     fillColor: _inputColor,
                     hintText: "Enter your name",
                     hintStyle: TextStyle(color: Colors.grey),
+                    errorText: _nameController.text.trim().isEmpty ? "Name is required" : null,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide.none,
@@ -125,7 +127,16 @@ class SettingState extends State<Setting> {
               ),
               onPressed: () {
                 final newName = _nameController.text.trim();
-                if (newName.isEmpty) return;
+                if (newName.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text("Name cannot be empty"),
+                      backgroundColor: Colors.red,
+                      duration: Duration(milliseconds: 1500),
+                    ),
+                  );
+                  return;
+                }
 
                 Navigator.of(context).pop();
 
@@ -427,37 +438,18 @@ class SettingState extends State<Setting> {
                   style: TextStyle(color: _textColor),
                 ),
                 value: this.checkStock,
-                onChanged: (val) => setState(() => this.checkStock = val),
+                onChanged: (val) async {
+                  setState(() => this.checkStock = val);
+                  // Save to Firestore immediately
+                  if (userData != null) {
+                    userData!.checkStock = val;
+                    await CrudHelper().updateUserData(userData!);
+                  }
+                },
               ),
             ),
 
             SizedBox(height: 30),
-
-            // ---------------- EDIT PROFILE BUTTON ----------------
-            SizedBox(
-              width: double.infinity,
-              height: 55,
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Color(0xFF2C2C2E),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                ),
-                icon: Icon(Icons.edit, color: Colors.white),
-                label: Text(
-                  "Edit Profile",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                onPressed: () => _showEditProfileDialog(_nameController.text),
-              ),
-            ),
-
-            SizedBox(height: 15),
 
             // ---------------- LOGOUT BUTTON ----------------
             SizedBox(
@@ -471,17 +463,30 @@ class SettingState extends State<Setting> {
                   ),
                 ),
                 icon: Icon(Icons.logout, color: _accentColor),
-                label: Text(
-                  "Log Out",
-                  style: TextStyle(
-                    color: _accentColor,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                onPressed: () async {
-                  await _auth.signOut();
-                },
+                label: _isLoggingOut
+                    ? SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(_accentColor),
+                        ),
+                      )
+                    : Text(
+                        "Log Out",
+                        style: TextStyle(
+                          color: _accentColor,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                onPressed: _isLoggingOut
+                    ? null
+                    : () async {
+                        setState(() => _isLoggingOut = true);
+                        await _auth.signOut();
+                        // No need to reset state as widget will be disposed
+                      },
               ),
             ),
 

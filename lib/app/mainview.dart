@@ -18,7 +18,7 @@ class MainView extends StatelessWidget {
       initialData: null,
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'Bookkeeping app',
+        title: 'Gadget',
         theme: AppTheme.dark(),
 
         // CORRECTION:

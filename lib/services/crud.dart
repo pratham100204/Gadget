@@ -217,6 +217,39 @@ class CrudHelper {
     return ItemTransaction.fromQuerySnapshot(snapshots);
   }
 
+  Future<void> deleteAllTransactions() async {
+    String? targetEmail = this.userData!.targetEmail;
+    
+    // Check if user has permission (must be own email)
+    if (targetEmail != this.userData!.email) {
+      throw Exception('Permission denied: Cannot delete transactions for other users');
+    }
+    
+    // Get all transactions
+    QuerySnapshot snapshots = await FirebaseFirestore.instance
+        .collection('$targetEmail-transactions')
+        .get();
+    
+    if (snapshots.docs.isEmpty) {
+      return; // Nothing to delete
+    }
+    
+    // Delete each transaction in batches (Firestore batch limit is 500)
+    const int batchSize = 500;
+    List<DocumentSnapshot> docs = snapshots.docs;
+    
+    for (int i = 0; i < docs.length; i += batchSize) {
+      WriteBatch batch = FirebaseFirestore.instance.batch();
+      int end = (i + batchSize < docs.length) ? i + batchSize : docs.length;
+      
+      for (int j = i; j < end; j++) {
+        batch.delete(docs[j].reference);
+      }
+      
+      await batch.commit();
+    }
+  }
+
   // Users
   Future<UserData?> getUserData(String field, String value) async {
     QuerySnapshot userDataSnapshots = await FirebaseFirestore.instance

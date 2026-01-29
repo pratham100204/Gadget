@@ -15,6 +15,7 @@ class _RegisterState extends State<Register> {
   final _formKey = GlobalKey<FormState>();
   String error = '';
   bool loading = false;
+  bool _obscurePassword = true; // Password visibility toggle
 
   TextEditingController userEmailController = TextEditingController();
   TextEditingController userPasswordController = TextEditingController();
@@ -27,6 +28,11 @@ class _RegisterState extends State<Register> {
   final Color _accentColor = const Color(0xFFFF3B30);
   final Color _textColor = Colors.white;
   final Color _subTextColor = Colors.grey;
+
+  // Email validation regex
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -84,6 +90,15 @@ class _RegisterState extends State<Register> {
                   icon: Icons.email_outlined,
                   hintText: "Email",
                   obscureText: false,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!_isValidEmail(val)) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
                   onChanged: (val) {
                     setState(() => this.userEmailController.text = val);
                   },
@@ -95,7 +110,18 @@ class _RegisterState extends State<Register> {
                   controller: userPasswordController,
                   icon: Icons.lock_outline,
                   hintText: "Password",
-                  obscureText: true,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: _subTextColor,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                   validator:
                       (val) =>
                           val!.length < 6
@@ -159,8 +185,11 @@ class _RegisterState extends State<Register> {
                     ),
                     onPressed: () async {
                       if (_formKey.currentState!.validate()) {
-                        setState(() => loading = true);
-                        String email = this.userEmailController.text;
+                        setState(() {
+                          loading = true;
+                          error = '';
+                        });
+                        String email = this.userEmailController.text.trim();
                         String password = this.userPasswordController.text;
 
                         dynamic result = await _auth.register(
@@ -172,7 +201,7 @@ class _RegisterState extends State<Register> {
                         if (result == null) {
                           setState(() {
                             loading = false;
-                            error = 'Please supply a valid email';
+                            error = 'Registration failed. Email may already be in use.';
                           });
                         }
                       }
@@ -203,6 +232,7 @@ class _RegisterState extends State<Register> {
     required bool obscureText,
     required Function(String) onChanged,
     String? Function(String?)? validator,
+    Widget? suffixIcon,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -219,6 +249,7 @@ class _RegisterState extends State<Register> {
           hintText: hintText,
           hintStyle: TextStyle(color: _subTextColor),
           prefixIcon: Icon(icon, color: _subTextColor),
+          suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
           errorStyle: TextStyle(

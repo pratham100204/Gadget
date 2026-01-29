@@ -15,6 +15,7 @@ class _SignInState extends State<SignIn> {
   final _formKey = GlobalKey<FormState>();
   String error = '';
   bool loading = false;
+  bool _obscurePassword = true; // Password visibility toggle
 
   TextEditingController userEmailController = TextEditingController();
   TextEditingController userPasswordController = TextEditingController();
@@ -25,6 +26,11 @@ class _SignInState extends State<SignIn> {
   final Color _accentColor = const Color(0xFFFF3B30);
   final Color _textColor = Colors.white;
   final Color _subTextColor = Colors.grey;
+
+  // Email validation regex
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +87,15 @@ class _SignInState extends State<SignIn> {
                   icon: Icons.email_outlined,
                   hintText: "Email",
                   obscureText: false,
+                  validator: (val) {
+                    if (val == null || val.isEmpty) {
+                      return 'Please enter your email';
+                    }
+                    if (!_isValidEmail(val)) {
+                      return 'Please enter a valid email';
+                    }
+                    return null;
+                  },
                   onChanged: (val) {
                     setState(() => this.userEmailController.text = val);
                   },
@@ -92,7 +107,18 @@ class _SignInState extends State<SignIn> {
                   controller: userPasswordController,
                   icon: Icons.vpn_key_outlined,
                   hintText: "Password",
-                  obscureText: true,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: _subTextColor,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
                   validator:
                       (val) =>
                           val!.length < 6
@@ -125,8 +151,11 @@ class _SignInState extends State<SignIn> {
                     ),
                     onPressed: () async {
                       if (_formKey.currentState!.validate()) {
-                        setState(() => loading = true);
-                        String email = this.userEmailController.text;
+                        setState(() {
+                          loading = true;
+                          error = '';
+                        });
+                        String email = this.userEmailController.text.trim();
                         String password = this.userPasswordController.text;
                         dynamic result = await _auth.signInWithEmailAndPassword(
                           email,
@@ -135,7 +164,7 @@ class _SignInState extends State<SignIn> {
                         if (result == null) {
                           setState(() {
                             loading = false;
-                            error = 'Could not sign in with those credentials';
+                            error = 'Invalid email or password. Please try again.';
                           });
                         }
                       }
@@ -166,6 +195,7 @@ class _SignInState extends State<SignIn> {
     required bool obscureText,
     required Function(String) onChanged,
     String? Function(String?)? validator,
+    Widget? suffixIcon,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -182,6 +212,7 @@ class _SignInState extends State<SignIn> {
           hintText: hintText,
           hintStyle: TextStyle(color: _subTextColor),
           prefixIcon: Icon(icon, color: _subTextColor),
+          suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
           errorStyle: TextStyle(height: 0, color: Colors.transparent),

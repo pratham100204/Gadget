@@ -50,6 +50,7 @@ dependencies:
   lottie: ^3.3.2
   path_provider: ^2.1.5
   flutter_local_notifications: ^17.0.0
+  flutter_native_splash: ^2.4.3
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +78,8 @@ flutter:
   assets:
     - assets/icon.png
     - assets/loading circle.json
+    - assets/splash_icon.png
+    - assets/clglogo.png
   
   #   - images/a_dot_ham.jpeg
 
@@ -105,3 +108,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Native Splash Screen Configuration
+flutter_native_splash:
+  color: "#000000"  # Black background matching app theme
+  image: assets/icon.png  # Your app icon
+  android: true
+  ios: true
+  web: false
+  
+  android_12:
+    color: "#000000"
+    image: assets/icon.png
+    icon_background_color: "#FF3B30"  # Red accent color

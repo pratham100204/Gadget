@@ -173,6 +173,12 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
                     label: "Item Name",
                     hint: "Name of the new item",
                     controller: this.itemNameController,
+                    validator: (val) {
+                      if (val == null || val.trim().isEmpty) {
+                        return 'Item name is required';
+                      }
+                      return null;
+                    },
                     onChanged: (String value) {
                       setState(() {
                         this.updateItemName();
@@ -287,15 +293,22 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
                                   ),
                                   if (_imageBytes != null)
                                     TextButton(
-                                      onPressed:
-                                          () => setState(
-                                            () => _imageBytes = null,
-                                          ),
-                                      child: Text(
-                                        'Remove',
-                                        style: TextStyle(color: Colors.red),
-                                      ),
+                                      onPressed: () async {
+                                      // Delete image from storage
+                                      String key =
+                                          this.item!.nickName?.isNotEmpty == true
+                                              ? this.item!.nickName!
+                                              : (this.item!.name ?? '');
+                                      if (key.isNotEmpty) {
+                                        await ImageStore.removeImage(key);
+                                      }
+                                      setState(() => _imageBytes = null);
+                                    },
+                                    child: Text(
+                                      'Remove',
+                                      style: TextStyle(color: Colors.red),
                                     ),
+                                  ),
                                 ],
                               ),
                             ],
@@ -416,6 +429,7 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
     String? hint,
     required TextEditingController controller,
     Function(String)? onChanged,
+    String? Function(String?)? validator,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
   }) {
@@ -435,6 +449,7 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
             keyboardType: keyboardType,
             maxLines: maxLines,
             style: TextStyle(color: _textColor),
+            validator: validator,
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: TextStyle(color: Colors.grey.shade700),
@@ -444,9 +459,6 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
                 vertical: 14,
               ),
             ),
-            validator:
-                (value) =>
-                    null, // Keeping validation silent as per original code logic
           ),
         ),
       ],
@@ -619,10 +631,12 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
     if (message.isEmpty) {
       this.clearFieldsAndItem();
       refreshItemMapCache();
+      // Navigate back with success flag
+      Navigator.pop(context, true);
       WindowUtils.showAlertDialog(
         this.context,
         'Status',
-        'Item created successfully',
+        'Item saved successfully',
       );
     } else {
       WindowUtils.showAlertDialog(this.context, 'Failed!', message);
@@ -649,10 +663,58 @@ class _ItemEntryFormState extends State<ItemEntryForm> {
       context,
       "Delete?",
       "This action is very dangerous and you may lose vital information. Delete?",
-      onPressed: (buildContext) {
-        crudHelper!.deleteItem(this.item!.id!);
+      onPressed: (buildContext) async {
+        // Close confirmation dialog
         Navigator.pop(context);
-        WindowUtils.moveToLastScreen(context, modified: true);
+        
+        // Show loading indicator
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(_accentColor),
+            ),
+          ),
+        );
+        
+        try {
+          // Delete item
+          await crudHelper!.deleteItem(this.item!.id!);
+          
+          // Delete associated image if exists
+          String key = this.item!.nickName?.isNotEmpty == true
+              ? this.item!.nickName!
+              : (this.item!.name ?? '');
+          if (key.isNotEmpty) {
+            await ImageStore.removeImage(key);
+          }
+          
+          // Close loading dialog
+          Navigator.pop(context);
+          
+          // Navigate back with success flag
+          Navigator.pop(context, true);
+          
+          // Show success message
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Item deleted successfully'),
+              backgroundColor: Colors.green,
+              duration: Duration(milliseconds: 1500),
+            ),
+          );
+        } catch (e) {
+          // Close loading dialog
+          Navigator.pop(context);
+          
+          // Show error message
+          WindowUtils.showAlertDialog(
+            context,
+            'Error',
+            'Failed to delete item: ${e.toString()}',
+          );
+        }
       },
     );
   }

@@ -5,6 +5,15 @@ import 'package:firebase_auth/firebase_auth.dart' as auth;
 class AuthService {
   auth.FirebaseAuth get _firebaseAuth => auth.FirebaseAuth.instance;
 
+  // Constructor to ensure persistence is set
+  AuthService() {
+    // Set persistence to LOCAL (default, but explicit for clarity)
+    // This ensures the session persists even after app restart
+    _firebaseAuth.setPersistence(auth.Persistence.LOCAL).catchError((e) {
+      print('Error setting persistence: $e');
+    });
+  }
+
   Future<UserData?> _userDataFromUser(auth.User? user) async {
     if (user == null) {
       return null;
